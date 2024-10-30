@@ -711,6 +711,8 @@ impl<D: 'static + RiscVDisassembler + Send + Sync> architecture::Architecture fo
                     };
 
                     res.add_branch(branch_type, None);
+                } else {
+                    res.add_branch(BranchInfo::Unresolved, None);
                 }
             }
             Op::Beq(ref b)
@@ -1225,13 +1227,25 @@ impl<D: 'static + RiscVDisassembler + Send + Sync> architecture::Architecture fo
                     (0, _, _) => il.jump(target).append(), // indirect jump
                     (_, _, _) => {
                         // indirect jump with storage of next address to non-`ra` register
-                        il.set_reg(
-                            max_width,
-                            Register::from(rd),
-                            il.const_ptr(addr.wrapping_add(inst_len)),
-                        )
-                        .append();
-                        il.jump(target).append();
+                        if rd.id() == rs1.id() {
+                            let tmp: llil::Register<Register<D>> = llil::Register::Temp(0);
+                            il.set_reg(max_width, tmp, target).append();
+                            il.set_reg(
+                                max_width,
+                                Register::from(rd),
+                                il.const_ptr(addr.wrapping_add(inst_len)),
+                            )
+                            .append();
+                            il.jump(tmp).append();
+                        } else {
+                            il.set_reg(
+                                max_width,
+                                Register::from(rd),
+                                il.const_ptr(addr.wrapping_add(inst_len)),
+                            )
+                            .append();
+                            il.jump(target).append();
+                        }
                     }
                 }
             }
