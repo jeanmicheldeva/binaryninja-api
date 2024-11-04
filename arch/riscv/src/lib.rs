@@ -1183,11 +1183,33 @@ impl<D: 'static + RiscVDisassembler + Send + Sync> architecture::Architecture fo
             Op::SraW(r) => simple_r!(r, |rs1, rs2| il.sx(max_width, il.asr(4, rs1, rs2))),
 
             Op::Mul(r) => simple_r!(r, |rs1, rs2| il.mul(max_width, rs1, rs2)),
-            /*
-            Op::MulH(r) =>
-            Op::MulHU(r) =>
-            Op::MulHSU(r) =>
-            */
+            Op::MulH(r) |
+            Op::MulHU(r) |
+            Op::MulHSU(r) => {
+                let rd = Register::from(r.rd());
+                let rs1 = Register::from(r.rs1());
+                let rs2 = Register::from(r.rs2());
+
+                let extended_rs1 = match op {
+                    Op::MulH(..) | Op::MulHSU(..) => il.sx(max_width * 2, rs1),
+                    Op::MulHU(..) => il.zx(max_width * 2, rs1),
+                    _ => unreachable!(),
+                };
+                let extended_rs2 = match op {
+                    Op::MulH(..) => il.sx(max_width * 2, rs2),
+                    Op::MulHSU(..)| Op::MulHU(..) => il.zx(max_width * 2, rs2),
+                    _ => unreachable!(),
+                };
+                let full_result = il.mul(2 * max_width, extended_rs1, extended_rs2);
+
+                let upper_part = match op {
+                    Op::MulH(..) | Op::MulHSU(..) => il.asr(max_width, full_result, il.const_int(1, 8 * (max_width as u64))),
+                    Op::MulHU(..) => il.lsr(max_width, full_result, il.const_int(1, 8 * (max_width as u64))),
+                    _ => unreachable!(),
+                };
+                il.set_reg(rd.size(), rd, upper_part).append();
+            },
+
             Op::Div(r) => simple_r!(r, |rs1, rs2| il.divs(max_width, rs1, rs2)),
             Op::DivU(r) => simple_r!(r, |rs1, rs2| il.divu(max_width, rs1, rs2)),
             Op::Rem(r) => simple_r!(r, |rs1, rs2| il.mods(max_width, rs1, rs2)),
